@@ -1,29 +1,28 @@
+
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pathlib import Path
-from fastmcp import FastMCP
-from typing import Dict
+from typing import Dict, List, Any , Optional
+from contextlib import AsyncExitStack
 
 class ClientManager:
+    def __init__(self):
+        self.base_dir: Path = Path(__file__).parent.parent
+        self.server_dir : str = self.base_dir /"server"
+        self._client: Optional[MultiServerMCPClient] = None
+        self._serverState: Dict = None
 
-    def __init__(self ):
-        self.base_dir : Path = Path(__file__).parent.parent
-        self.server_dir : str = self.base_dir
-
-        self._client : FastMCP = None
-        self._serverState : Dict = None
-    
     @property
     def is_initialised(self) -> bool:
         return self._client is not None
 
     @property
-    def client(self):
-
+    def client(self) -> MultiServerMCPClient:
         return self._client
     
-    def client_initialization(self):
-        self._serverState  = {
-            "math": {
+    def client_initialization(self) -> MultiServerMCPClient:
+        # Using the exact dictionary structure you provided
+        self._serverState = {
+            "Chatbot_tools": {
                 "transport": "stdio",
                 "command": "uv",
                 "env": {
@@ -35,18 +34,17 @@ class ClientManager:
                     "run",
                     "fastmcp",
                     "run",
-                    "local_server.py"
+                    "chatbot_server.py"
                 ]
             }
         }
         self._client = MultiServerMCPClient(self._serverState)
-
         return self._client
     
-    def get_client_tools(self):
-
+    async def get_client_tools(self) -> List[Any]:
         if not self.is_initialised:
-            raise ValueError("Initialise the client first Using 'client_initialization'.")
-        
-        tools = self._client.get_tools()
+            self.client_initialization()
+
+        tools = await self._client.get_tools()
         return tools
+    

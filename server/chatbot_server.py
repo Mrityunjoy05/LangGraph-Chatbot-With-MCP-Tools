@@ -1,9 +1,11 @@
 
 import sys
 from pathlib import Path
-# Add parent directory to sys.path
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir))
+
+# Add parent directory to sys.path for modular imports
+parent_dir = Path(__file__).resolve().parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 from core.server_manager import ServerManager
 from tools.search_tool import search_web_tavily
@@ -13,16 +15,16 @@ from tools.weather import get_weather
 manager = ServerManager()
 
 # 2. Create Server Instance
-# Industry tip: Use specific instructions so the LLM knows the server's purpose
+# The 'instructions' help the LLM understand when to use this specific server
 mcp = manager.server_implementation(
-    instructions="A collection of tools for web searching and weather retrieval."
+    instructions="Use these tools to fetch real-time weather and perform web searches."
 )
 
-# 3. Explicit Tool Registration
-# Registering via function allows us to control which tools are exposed
-mcp.tool(name="search_web")(search_web_tavily)
+# 3. Tool Registration
+# FastMCP automatically handles 'async def' functions correctly
+mcp.tool(name="search_web_tavily")(search_web_tavily)
 mcp.tool(name="get_weather")(get_weather)
 
 if __name__ == "__main__":
-    # In production, this would be called by an MCP Host (like Claude Desktop or your own Client)
+    # run() starts the stdio transport by default, which is perfect for your ClientManager
     mcp.run()
