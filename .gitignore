@@ -1,0 +1,67 @@
+# --- Core Python Garbage ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Virtual Environments ---
+
+.venv/
+venv/
+env/
+
+*.key
+*.pem
+secrets.json
+.streamlit/secrets.toml
+
+# --- Environment Variables & Secrets ---
+.env
+.env.*
+# Exception: Allow the example file so others know what keys they need
+!.env.example
+
+# --- Modern Tool Caches (Speed optimization) ---
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache
+
+
+# --- Editor / IDE Settings ---
+
+.vscode/
+.idea/
+
+# --- Operating System Files ---
+# Windows junk files
+
+Thumbs.db
+desktop.ini
+.Trashes
+# --- Databases & Data ---
+*.db
+*.sqlite3
+data/
+
+# --- Logs and Temporary Files ---
+*.log
+logs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- IDE and Project Settings ---
+.project
+.pydevproject
+.settings/
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints/
+
+
+#extra
+extra/
