@@ -3,6 +3,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from langchain_groq import ChatGroq
 from langchain_core.messages import BaseMessage , HumanMessage , AIMessage
@@ -43,6 +44,7 @@ class Agent_Manager:
             MessagesPlaceholder(variable_name="messages"),
         ])
         
+        self.checkpointer : Optional[AsyncSqliteSaver] = None
         self.llm_with_tools : Optional[Runnable]= None
         self._graph : Optional[StateGraph]= None
         self._agent: Optional[CompiledStateGraph] = None
@@ -71,7 +73,7 @@ class Agent_Manager:
         Async entry point to wire up DB and MCP Tools.
         """
         # 1. Setup DB Checkpointer
-        checkpointer = await self.database_manager.connection()
+        self.checkpointer = await self.database_manager.connection()
         
         # 2. Get tools from MCP Client
         tools = await self.client_manager.get_client_tools()
@@ -91,7 +93,7 @@ class Agent_Manager:
         
         self._graph = workflow
 
-        self._agent = workflow.compile(checkpointer=checkpointer)
+        self._agent = workflow.compile(checkpointer=self.checkpointer)
         
         print("Agent Manager: Tools bound and Graph compiled (Async).")
         return self._agent
@@ -136,4 +138,33 @@ class Agent_Manager:
         except Exception as e:
             yield f"Streaming error: {str(e)}"
     
-        
+
+    
+    async def get_unique_threade_id(self):
+        """Get list of all unique thread IDs using async iteration"""
+        unique_thread_ids = set()
+        # .list() is an async generator, you MUST use 'async for'
+        async for state in self.checkpointer.list(None):
+            tid = state.config.get('configurable', {}).get('thread_id')
+            if tid:
+                unique_thread_ids.add(tid)
+        return list(unique_thread_ids)
+
+    # 2. Change to 'async def' and use 'aget_state' instead of 'get_state'
+    async def get_thread_title(self, thread_id):
+        """Must be async and use aget_state for Async checkpointers"""
+        try:
+            # Use aget_state (async) instead of get_state (sync)
+            state = await self.agent.aget_state({'configurable': {'thread_id': thread_id}})
+            messages = state.values.get('messages', [])
+            
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    # Increased to 25 chars for better UI readability
+                    title = msg.content[:25].strip()
+                    return f"{title}..." if len(msg.content) > 25 else title
+            
+            return "New Chat"
+        except Exception as e:
+            print(f"Error getting title: {e}")
+            return "New Chat"
