@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#55acf2"
+backgroundColor = "#F0F7FF" 
+secondaryBackgroundColor = "#D9E9F9"
+textColor = "#262730"
+font = "sans serif"
+
+# HELPFUL: Sets VS Code terminal logs to show app activity.
+level = "info"

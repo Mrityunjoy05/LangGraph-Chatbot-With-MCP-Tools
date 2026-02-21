@@ -9,3 +9,9 @@ python-dotenv
 
 langgraph
 langchain-tavily
+
+langgraph-checkpoint-sqlite
+
+streamlit
+
+pygithub

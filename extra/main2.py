@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from core.agent_manager import Agent_Manager
 from langgraph.types import Command
 from langchain_core.messages import ToolMessage
@@ -6,17 +7,19 @@ from langchain_core.messages import ToolMessage
 async def main():
     manager = Agent_Manager()
     agent = await manager.initialize()
-    thread_id = "0019"
+    # thread_id = "004"
+    thread_id = "014"
     config = {"configurable": {"thread_id": thread_id}}
 
-    print("--- 🛡️ GitHub Agent: Secure Terminal Mode ---")
+    print("--- ✅ System Online & Secure ---")
 
     while True:
         user_input = input("\nYou: ").strip()
         if user_input.lower() in ["exit", "quit"]: break
         if not user_input: continue
 
-        # 1. Initial execution (AI thinking and deciding)
+        # 1. Initial execution
+        # We use stream_mode="updates" to avoid the "Values" wall of text
         async for event in agent.astream({"messages": [("user", user_input)]}, config, stream_mode="updates"):
             for node_name, output in event.items():
                 if node_name == "agent":
@@ -24,51 +27,49 @@ async def main():
                     if msg.content:
                         print(f"AI: {msg.content}")
 
-        # 2. HITL (Human-In-The-Loop) Logic
+        # 2. HITL Check
         state = await agent.aget_state(config)
-        
-        # This 'while' loop catches tool calls even if there are multiple in a row
         while state.next and "tools" in state.next:
             last_ai_msg = state.values["messages"][-1]
             
             for tool_call in last_ai_msg.tool_calls:
                 t_name = tool_call["name"]
                 t_args = tool_call["args"]
-                t_id = tool_call["id"]
 
-                # --- GUARDRAIL: Limit repository lists to keep terminal clean ---
+                # FIX: If the AI tries to list 100 repos, it breaks the response. 
+                # Let's cap it at 10 for the terminal.
                 if t_name == "list_repositories" and t_args.get("limit", 0) > 10:
                     t_args["limit"] = 10
 
-                # --- SECURITY CHECK: Dangerous Actions ---
                 if t_name in ["delete_repository", "create_repository"]:
                     print(f"\n🛑 [SECURITY CHECK]: AI wants to {t_name}")
                     print(f"Details: {t_args}")
                     confirm = input("Allow this? (y/n): ").lower()
-
+                    
                     if confirm != 'y':
-                        # STEP 1: Create the "Injection" message to tell the AI it was denied
+                        # 1. Create a fake tool response telling the AI you denied it
                         reject_msg = ToolMessage(
-                            tool_call_id=t_id,
+                            tool_call_id=tool_call["id"],
                             name=t_name,
-                            content=f"USER DENIED: The human user has explicitly rejected the {t_name} action for security reasons. Acknowledge this and stop."
+                            content="ACTION FAILED: The user explicitly denied this security check. Do not proceed."
                         )
                         
-                        # STEP 2: Update the state ACTING AS the 'tools' node
-                        # This skips the real GitHub call and records the rejection
+                        # 2. Update the state ACTING AS the 'tools' node (This skips the real tool!)
                         await agent.aupdate_state(config, {"messages": [reject_msg]}, as_node="tools")
                         
-                        print("System: Action blocked. Informing AI...")
+                        print("System: Action cancelled.")
                         
-                        # STEP 3: Let the AI respond to the rejection
+                        # 3. Resume the graph from the agent node so it reads your rejection
                         async for update in agent.astream(None, config, stream_mode="updates"):
                             if "agent" in update:
                                 final_msg = update["agent"]["messages"][-1]
                                 if final_msg.content:
                                     print(f"AI: {final_msg.content}")
-                        break # Break out of the tool loop for this rejection
+                        break # Exit the tool loop
                 
-                # --- EXECUTION: If approved or safe tool ---
+                # ... (Keep your Resume execution logic for when confirm == 'y' here)
+                
+                # Resume execution
                 print(f"🚀 Running {t_name}...")
                 async for update in agent.astream(Command(resume=True), config, stream_mode="updates"):
                     if "agent" in update:
@@ -76,7 +77,6 @@ async def main():
                         if final_msg.content:
                             print(f"AI: {final_msg.content}")
 
-            # Refresh state to see if the AI wants to do anything else
             state = await agent.aget_state(config)
 
     await manager.database_manager.close_connection()

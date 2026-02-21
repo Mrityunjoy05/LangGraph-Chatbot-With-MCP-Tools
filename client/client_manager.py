@@ -2,12 +2,11 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pathlib import Path
 from typing import Dict, List, Any , Optional
-from contextlib import AsyncExitStack
-
+from config.settings import settings
 class ClientManager:
     def __init__(self):
         self.base_dir: Path = Path(__file__).parent.parent
-        self.server_dir : str = self.base_dir /"server"
+        self.server_dir : str = self.base_dir /settings.SERVER_FOLDER_NAME
         self._client: Optional[MultiServerMCPClient] = None
         self._serverState: Dict = None
 
@@ -22,7 +21,7 @@ class ClientManager:
     def client_initialization(self) -> MultiServerMCPClient:
         # Using the exact dictionary structure you provided
         self._serverState = {
-            "Chatbot_tools": {
+            settings.WEB_SERVER_NAME: {
                 "transport": "stdio",
                 "command": "uv",
                 "env": {
@@ -35,6 +34,21 @@ class ClientManager:
                     "fastmcp",
                     "run",
                     "chatbot_server.py"
+                ]
+            },
+            settings.GITHUB_SERVER_NAME: {
+                "transport": "stdio",
+                "command": "uv",
+                "env": {
+                    "PYTHONPATH": str(self.base_dir)  
+                },
+                "args": [
+                    "--directory",
+                    str(self.server_dir),
+                    "run",
+                    "fastmcp",
+                    "run",
+                    "github_mcp_server.py"
                 ]
             }
         }

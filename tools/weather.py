@@ -45,3 +45,5 @@ async def get_weather(city: str) -> str:
             return f"Weather API error: {e.response.status_code} - {e.response.text}"
         except Exception as e:
             return f"Unexpected Error: {str(e)}"
+
+

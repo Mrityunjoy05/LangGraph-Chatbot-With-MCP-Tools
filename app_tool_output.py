@@ -45,13 +45,13 @@ st.markdown("""
 }
 
 .security-box {
-    background: #1a0a0a;
+    background: #e87272;
     border-left: 3px solid #f85149;
     border-radius: 6px;
     padding: 12px 16px;
     margin: 8px 0;
 }
-.security-box .sec-title { color: #f85149; font-weight: 700; font-size: 15px; }
+.security-box .sec-title { color: #de150b; font-weight: 700; font-size: 15px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -368,13 +368,14 @@ def render_event(event: dict):
 <div class="tool-box">
   <div class="tool-name">⚙ {event['tool_name']}</div>
 </div>""", unsafe_allow_html=True)
-    # ── REMOVED: tool_result block ──────────────────────────────────
-    # The raw tool output (✓ tool_name result: ...) was previously
-    # rendered here using the .result-box CSS class.
-    # Removed because the agent already summarises results in its
-    # final AI reply — showing raw output was redundant and noisy.
     elif t == "tool_result":
-        pass  # intentionally hidden
+        content = str(event["content"])
+        if len(content) > 800:
+            content = content[:800] + "\n…(truncated)"
+        st.markdown(f"""
+<div class="result-box">
+✓ <strong style="color:#58a6ff">{event['tool_name']}</strong> result:<br><br>{content}
+</div>""", unsafe_allow_html=True)
     elif t == "system":
         st.info(event["content"])
 
@@ -472,7 +473,7 @@ if st.session_state["pending_confirm"]:
     st.stop()
 
 # ── Chat input ─────────────────────────────────────────────────────
-user_input = st.chat_input("Ask the AI agent anything…")
+user_input = st.chat_input("Ask the Ai agent anything…")
 
 if user_input:
     # Append user message and rerun immediately so it renders BEFORE the spinner

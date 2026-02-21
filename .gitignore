@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 
+
 # --- Virtual Environments ---
 
 .venv/
@@ -14,6 +15,13 @@ env/
 *.pem
 secrets.json
 .streamlit/secrets.toml
+
+
+# database/
+
+database/*
+!/database/.gitkeep
+
 
 # --- Environment Variables & Secrets ---
 .env
@@ -63,5 +71,19 @@ pip-delete-this-directory.txt
 .ipynb_checkpoints/
 
 
+# --- UV (Package Manager) ---
+# If you use uv, ignore the local environment but keep uv.lock
+.uv/
+# --- LangChain / LangGraph Tracing ---
+# If you use LangSmith for debugging
+.langsmith/
+
+# --- AsyncSqliteSaver Temporary Files ---
+# SQLite creates "Write Ahead Logs" (-wal) and shared memory (-shm) files
+# when the database is active. You MUST ignore these.
+*.db-wal
+*.db-shm
+
 #extra
-extra/
+# extra/
+/utils/

@@ -11,7 +11,7 @@ from core.agent_manager import Agent_Manager
 
 # ── Page config ────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AI Agent",
+    page_title="GitHub AI Agent",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -84,28 +84,21 @@ def run_async(coro):
 # ══════════════════════════════════════════════════════════════════
 
 def get_unique_thread_ids() -> list:
-    """
-    Read all unique thread IDs from DB.
-    Collect with timestamps so we can sort oldest→newest,
-    then new chats appended to front will always be the most recent.
-    """
+    """Read all unique thread IDs stored in the checkpointer DB."""
     try:
         manager = st.session_state.get("manager")
         if not manager:
             return []
         checkpointer = manager.database_manager.checkpointer
         all_checkpoints = checkpointer.list(None)
-        # { thread_id: latest_ts }
-        tid_ts = {}
+        seen = set()
+        result = []
         for cp in all_checkpoints:
             tid = cp.config["configurable"]["thread_id"]
-            ts = cp.metadata.get("created_at") or ""
-            # Keep the latest timestamp per thread
-            if tid not in tid_ts or ts > tid_ts[tid]:
-                tid_ts[tid] = ts
-        # Sort oldest → newest so that prepending new chats keeps newest at top
-        sorted_tids = sorted(tid_ts.keys(), key=lambda t: tid_ts[t])
-        return sorted_tids
+            if tid not in seen:
+                seen.add(tid)
+                result.append(tid)
+        return result
     except Exception:
         return []
 
@@ -200,8 +193,7 @@ def generate_thread_id() -> str:
 
 def add_thread_to_history(thread_id: str):
     if thread_id not in st.session_state["thread_id_history"]:
-        # Insert at front so newest chat always appears at top of sidebar
-        st.session_state["thread_id_history"].insert(0, thread_id)
+        st.session_state["thread_id_history"].append(thread_id)
 
 
 def reset_chat():
@@ -368,13 +360,14 @@ def render_event(event: dict):
 <div class="tool-box">
   <div class="tool-name">⚙ {event['tool_name']}</div>
 </div>""", unsafe_allow_html=True)
-    # ── REMOVED: tool_result block ──────────────────────────────────
-    # The raw tool output (✓ tool_name result: ...) was previously
-    # rendered here using the .result-box CSS class.
-    # Removed because the agent already summarises results in its
-    # final AI reply — showing raw output was redundant and noisy.
     elif t == "tool_result":
-        pass  # intentionally hidden
+        content = str(event["content"])
+        if len(content) > 800:
+            content = content[:800] + "\n…(truncated)"
+        st.markdown(f"""
+<div class="result-box">
+✓ <strong style="color:#58a6ff">{event['tool_name']}</strong> result:<br><br>{content}
+</div>""", unsafe_allow_html=True)
     elif t == "system":
         st.info(event["content"])
 
@@ -383,7 +376,7 @@ def render_event(event: dict):
 # ══════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("## 🤖 AI Agent")
+    st.markdown("## 🤖 GitHub Agent")
     st.divider()
 
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
@@ -472,7 +465,7 @@ if st.session_state["pending_confirm"]:
     st.stop()
 
 # ── Chat input ─────────────────────────────────────────────────────
-user_input = st.chat_input("Ask the AI agent anything…")
+user_input = st.chat_input("Ask the GitHub agent anything…")
 
 if user_input:
     # Append user message and rerun immediately so it renders BEFORE the spinner
