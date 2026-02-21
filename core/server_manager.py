@@ -4,7 +4,7 @@ from typing import Optional
 
 class ServerManager:
     def __init__(self, server_name: Optional[str] = None):
-        self.server_name: str = server_name or settings.SERVER_NAME
+        self.server_name: str = server_name or settings.WEB_SERVER_NAME
         self._server: Optional[FastMCP] = None
 
     @property

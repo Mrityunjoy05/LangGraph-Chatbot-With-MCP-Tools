@@ -3,15 +3,16 @@ name = "langgraph-chatbot-with-mcp-tools"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "fastmcp>=2.14.5",
-    "langchain>=1.2.9",
+    "langchain>=1.2.10",
     "langchain-groq>=1.1.2",
     "langchain-mcp-adapters>=0.2.1",
     "langchain-tavily>=0.2.17",
     "langgraph>=1.0.8",
     "langgraph-checkpoint-sqlite>=3.0.3",
+    "pygithub>=2.8.1",
     "python-dotenv>=1.2.1",
     "streamlit>=1.54.0",
 ]

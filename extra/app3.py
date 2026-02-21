@@ -11,7 +11,7 @@ from core.agent_manager import Agent_Manager
 
 # ── Page config ────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AI Agent",
+    page_title="GitHub AI Agent",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -84,37 +84,28 @@ def run_async(coro):
 # ══════════════════════════════════════════════════════════════════
 
 def get_unique_thread_ids() -> list:
-    """
-    Read all unique thread IDs from DB.
-    Collect with timestamps so we can sort oldest→newest,
-    then new chats appended to front will always be the most recent.
-    """
+    """Read all unique thread IDs stored in the checkpointer DB."""
     try:
         manager = st.session_state.get("manager")
         if not manager:
             return []
         checkpointer = manager.database_manager.checkpointer
         all_checkpoints = checkpointer.list(None)
-        # { thread_id: latest_ts }
-        tid_ts = {}
+        seen = set()
+        result = []
         for cp in all_checkpoints:
             tid = cp.config["configurable"]["thread_id"]
-            ts = cp.metadata.get("created_at") or ""
-            # Keep the latest timestamp per thread
-            if tid not in tid_ts or ts > tid_ts[tid]:
-                tid_ts[tid] = ts
-        # Sort oldest → newest so that prepending new chats keeps newest at top
-        sorted_tids = sorted(tid_ts.keys(), key=lambda t: tid_ts[t])
-        return sorted_tids
+            if tid not in seen:
+                seen.add(tid)
+                result.append(tid)
+        return result
     except Exception:
         return []
 
 
 def get_thread_title(thread_id: str) -> str:
     """
-    Derive a title from the first AIMessage in the thread.
-    AI responses are always descriptive — better than using the user's
-    short trigger message (e.g. 'hi', 'hello', 'go').
+    Lazily derive a title from the first HumanMessage in the thread.
     Falls back to 'New Chat' if nothing found.
     """
     try:
@@ -125,11 +116,9 @@ def get_thread_title(thread_id: str) -> str:
         state = run_async(agent.aget_state({"configurable": {"thread_id": thread_id}}))
         messages = state.values.get("messages", [])
         for msg in messages:
-            if isinstance(msg, AIMessage) and msg.content:
-                # Take first sentence or first 40 chars — whichever is shorter
-                first_sentence = msg.content.strip().split(".")[0].strip()
-                title = first_sentence[:40]
-                if len(first_sentence) > 40:
+            if isinstance(msg, HumanMessage) and msg.content:
+                title = msg.content.strip()[:40]
+                if len(msg.content.strip()) > 40:
                     title += "…"
                 return title
         return "New Chat"
@@ -138,27 +127,10 @@ def get_thread_title(thread_id: str) -> str:
 
 
 def get_cached_title(thread_id: str) -> str:
-    """
-    Return cached title or fetch and cache it.
-    - Real title already cached → return immediately, no DB call.
-    - Title is "New Chat" or missing → always try DB.
-      If DB has a real title, cache it permanently.
-      If DB also returns "New Chat" (empty thread), just return "New Chat".
-    """
-    cached = st.session_state["thread_titles"].get(thread_id)
-
-    # Already have a real title — return immediately
-    if cached and cached != "New Chat":
-        return cached
-
-    # Try fetching from DB for ALL threads (not just active)
-    fetched = get_thread_title(thread_id)
-    if fetched and fetched != "New Chat":
-        # Cache permanently so we never hit DB again for this thread
-        st.session_state["thread_titles"][thread_id] = fetched
-        return fetched
-
-    return "New Chat"
+    """Return cached title or fetch and cache it."""
+    if thread_id not in st.session_state["thread_titles"]:
+        st.session_state["thread_titles"][thread_id] = get_thread_title(thread_id)
+    return st.session_state["thread_titles"][thread_id]
 
 
 def load_thread_history(thread_id: str) -> list:
@@ -200,18 +172,15 @@ def generate_thread_id() -> str:
 
 def add_thread_to_history(thread_id: str):
     if thread_id not in st.session_state["thread_id_history"]:
-        # Insert at front so newest chat always appears at top of sidebar
-        st.session_state["thread_id_history"].insert(0, thread_id)
+        st.session_state["thread_id_history"].append(thread_id)
 
 
 def reset_chat():
     """Start a brand-new chat thread."""
     tid = generate_thread_id()
     st.session_state["thread_id"] = tid
-    # Add to history list immediately — visible in sidebar right away
     add_thread_to_history(tid)
     st.session_state["session_history"] = []
-    # Pre-cache title as "New Chat" so sidebar never calls DB for empty threads
     st.session_state["thread_titles"][tid] = "New Chat"
     st.session_state["pending_confirm"] = None
 
@@ -368,13 +337,14 @@ def render_event(event: dict):
 <div class="tool-box">
   <div class="tool-name">⚙ {event['tool_name']}</div>
 </div>""", unsafe_allow_html=True)
-    # ── REMOVED: tool_result block ──────────────────────────────────
-    # The raw tool output (✓ tool_name result: ...) was previously
-    # rendered here using the .result-box CSS class.
-    # Removed because the agent already summarises results in its
-    # final AI reply — showing raw output was redundant and noisy.
     elif t == "tool_result":
-        pass  # intentionally hidden
+        content = str(event["content"])
+        if len(content) > 800:
+            content = content[:800] + "\n…(truncated)"
+        st.markdown(f"""
+<div class="result-box">
+✓ <strong style="color:#58a6ff">{event['tool_name']}</strong> result:<br><br>{content}
+</div>""", unsafe_allow_html=True)
     elif t == "system":
         st.info(event["content"])
 
@@ -383,7 +353,7 @@ def render_event(event: dict):
 # ══════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("## 🤖 AI Agent")
+    st.markdown("## 🤖 GitHub Agent")
     st.divider()
 
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
@@ -394,7 +364,7 @@ with st.sidebar:
     st.subheader("Previous Conversations")
     st.caption(f"Total: {len(st.session_state['thread_id_history'])} conversations")
 
-    for tid in st.session_state["thread_id_history"]:
+    for tid in reversed(st.session_state["thread_id_history"]):
         chat_title = get_cached_title(tid)
         is_active = tid == st.session_state["thread_id"]
         label = f"💬 {chat_title}" if is_active else f"📝 {chat_title}"
@@ -416,17 +386,7 @@ with st.sidebar:
 
 thread_id = st.session_state["thread_id"]
 
-# Rename input at top of chat
-current_title = st.session_state["thread_titles"].get(thread_id, "New Chat")
-new_title = st.text_input(
-    "Rename chat", value=current_title,
-    placeholder="Rename this chat…",
-    label_visibility="collapsed",
-    key="rename_input"
-)
-if new_title and new_title != current_title:
-    st.session_state["thread_titles"][thread_id] = new_title
-
+st.caption(f"Thread `{thread_id}`")
 st.divider()
 
 # Render current session history
@@ -472,17 +432,19 @@ if st.session_state["pending_confirm"]:
     st.stop()
 
 # ── Chat input ─────────────────────────────────────────────────────
-user_input = st.chat_input("Ask the AI agent anything…")
+user_input = st.chat_input("Ask the GitHub agent anything…")
 
 if user_input:
-    # Append user message and rerun immediately so it renders BEFORE the spinner
-    if st.session_state.get("_pending_input") != user_input:
-        st.session_state["session_history"].append({"type": "user", "content": user_input})
-        st.session_state["_pending_input"] = user_input
-        st.rerun()
+    # Add user message to display
+    st.session_state["session_history"].append({"type": "user", "content": user_input})
 
-if st.session_state.get("_pending_input"):
-    user_input = st.session_state.pop("_pending_input")
+    # Auto-title: update from first human message
+    current_title = st.session_state["thread_titles"].get(thread_id, "New Chat")
+    if current_title == "New Chat":
+        title = user_input.strip()[:40]
+        if len(user_input.strip()) > 40:
+            title += "…"
+        st.session_state["thread_titles"][thread_id] = title
 
     with st.spinner("Agent is thinking…"):
         events = stream_response(thread_id, user_input)
@@ -492,16 +454,6 @@ if st.session_state.get("_pending_input"):
     for e in events:
         if e["type"] != "confirm_required":
             st.session_state["session_history"].append(e)
-
-    # Auto-title: set immediately from first AI reply in THIS run — no reload needed
-    current_title = st.session_state["thread_titles"].get(thread_id, "New Chat")
-    if current_title == "New Chat":
-        first_ai = next((e for e in events if e["type"] == "ai" and e.get("content")), None)
-        if first_ai:
-            raw = first_ai["content"].strip()
-            first_sentence = raw.split(".")[0].strip()
-            title = first_sentence[:40] + ("…" if len(first_sentence) > 40 else "")
-            st.session_state["thread_titles"][thread_id] = title
 
     if confirm_event:
         st.session_state["pending_confirm"] = {

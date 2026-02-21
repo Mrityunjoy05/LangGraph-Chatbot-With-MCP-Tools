@@ -2,11 +2,12 @@ from typing import TypedDict, Annotated, List, Dict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph.message import add_messages
+from langgraph.types import Command
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from langchain_groq import ChatGroq
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from config.settings import settings 
@@ -116,3 +117,68 @@ class Agent_Manager:
         ):
             if isinstance(message, AIMessage) and message.content:
                 yield message.content
+
+    async def get_streaming_response1(self, user_input: str, config: Dict):
+        """Streams response and handles the state transition."""
+
+        async for event in self.agent.astream({"messages": [("user", user_input)]}, config, stream_mode="updates"):
+            for node_name, output in event.items():
+                if node_name == "agent":
+                    msg = output["messages"][-1]
+                    if msg.content:
+                        print(f"AI: {msg.content}")
+
+        # 2. HITL (Human-In-The-Loop) Logic
+        state = await self.agent.aget_state(config)
+        
+        # This 'while' loop catches tool calls even if there are multiple in a row
+        while state.next and "tools" in state.next:
+            last_ai_msg = state.values["messages"][-1]
+            
+            for tool_call in last_ai_msg.tool_calls:
+                t_name = tool_call["name"]
+                t_args = tool_call["args"]
+                t_id = tool_call["id"]
+
+                # --- GUARDRAIL: Limit repository lists to keep terminal clean ---
+                if t_name == "list_repositories" and t_args.get("limit", 0) > 10:
+                    t_args["limit"] = 10
+
+                # --- SECURITY CHECK: Dangerous Actions ---
+                if t_name in ["delete_repository", "create_repository"]:
+                    print(f"\n🛑 [SECURITY CHECK]: AI wants to {t_name}")
+                    print(f"Details: {t_args}")
+                    confirm = input("Allow this? (y/n): ").lower()
+
+                    if confirm != 'y':
+                        # STEP 1: Create the "Injection" message to tell the AI it was denied
+                        reject_msg = ToolMessage(
+                            tool_call_id=t_id,
+                            name=t_name,
+                            content=f"USER DENIED: The human user has explicitly rejected the {t_name} action for security reasons. Acknowledge this and stop."
+                        )
+                        
+                        # STEP 2: Update the state ACTING AS the 'tools' node
+                        # This skips the real GitHub call and records the rejection
+                        await self.agent.aupdate_state(config, {"messages": [reject_msg]}, as_node="tools")
+                        
+                        print("System: Action blocked. Informing AI...")
+                        
+                        # STEP 3: Let the AI respond to the rejection
+                        async for update in self.agent.astream(None, config, stream_mode="updates"):
+                            if "agent" in update:
+                                final_msg = update["agent"]["messages"][-1]
+                                if final_msg.content:
+                                    print(f"AI: {final_msg.content}")
+                        break # Break out of the tool loop for this rejection
+                
+                # --- EXECUTION: If approved or safe tool ---
+                print(f"🚀 Running {t_name}...")
+                async for update in self.agent.astream(Command(resume=True), config, stream_mode="updates"):
+                    if "agent" in update:
+                        final_msg = update["agent"]["messages"][-1]
+                        if final_msg.content:
+                            print(f"AI: {final_msg.content}")
+
+            # Refresh state to see if the AI wants to do anything else
+            state = await self.agent.aget_state(config)
